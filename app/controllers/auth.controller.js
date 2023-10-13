@@ -1,7 +1,7 @@
 const config = require("../config/auth.config");
 const db = require("../models");
 const User = db.user;
-const Role = db.role;
+const Device = db.device;
 
 var jwt = require("jsonwebtoken");
 var bcrypt = require("bcryptjs");
@@ -14,56 +14,39 @@ const errorHandler = (err, res) => {
   }
 }
 
-exports.institutionSignUp = (req, res) => {
-  const user = new User({
-    name: req.body.name,
-    email: req.body.email,
-    phone: req.body.phone,
-    site: req.body.site,
-    contactEmail: req.body.contactEmail,
-    contactPhone: req.body.contactPhone,
-    password: bcrypt.hashSync(req.body.password, 8),
-    resume: req.body.resume,
-    zipcode: req.body.zipcode,
-    address: req.body.address
-  });
+exports.signUp = (req, res) => {
+  if(req.body && req.body.name && req.body.login && req.body.password) {
+    const user = new User({
+      name: req.body.name,
+      login: req.body.login,
+      email: req.body.email,
+      phone: req.body.phone,
+      password: bcrypt.hashSync(req.body.password, 8),
+    });
+  
+    user.save().then(user => {
+      let successMsg = { message: `User ${user.name} was registered successfully!` };
 
-  user.save().then(user => {
-    Role.findOne({ name: "institution" }).then(role => {
-      user.role = role._id;
+      if(req.body.device){
+        const device = new Device({
+          deviceId: req.body.device.id,
+          uniqueId: req.body.device.uniqueId,
+          user: user._id
+        });
 
-      user.save().then(user => {
-        res.status(201).send({ message: `User ${user.name} was registered successfully!` });
-      }).catch(err => errorHandler(err, res));
+        device.save().then(device => res.status(201).send(successMsg))
+                      .catch(err => errorHandler(err, res));
+      } else {
+        res.status(201).send(successMsg);
+      }
     }).catch(err => errorHandler(err, res));
-  }).catch(err => errorHandler(err, res));
-}
-
-exports.voluntairSignUp = (req, res) => {
-  const user = new User({
-    name: req.body.name,
-    email: req.body.email,
-    phone: req.body.phone,
-    contactEmail: req.body.email,
-    contactPhone: req.body.phone,
-    password: bcrypt.hashSync(req.body.password, 8),
-    resume: req.body.resume,
-  });
-
-  user.save().then(user => {
-    Role.findOne({ name: "voluntair" }).then(role => {
-      user.role = role._id;
-
-      user.save().then(user => {
-        res.status(201).send({ message: `User ${user.name} was registered successfully!` });
-      }).catch(err => errorHandler(err, res));
-    }).catch(err => errorHandler(err, res));
-  }).catch(err => errorHandler(err, res));
+  } else {
+    res.status(400).send({ message: `Mandatory data was not received!` });
+  }
 };
 
 exports.signin = (req, res) => {
-  User.findOne({email: req.body.email}).populate("role")
-      .exec()
+  User.findOne({login: req.body.login}).exec()
       .then(user => {
         if (!user)
           return res.status(404).send({ message: "User Not found." });
@@ -76,20 +59,17 @@ exports.signin = (req, res) => {
         if (!passwordIsValid)
           return res.status(401).send({ message: "Invalid Password!" });
 
-        var authorities = `ROLE_${user.role.name.toUpperCase()}`;
-
-        const token = jwt.sign({ id: user._id, role: authorities},
+        const token = jwt.sign({ id: user._id },
                                 config.secret,
                                 {
                                   algorithm: 'HS256',
                                   allowInsecureKeySizes: true,
-                                  expiresIn: 3600,//1 hour
+                                  expiresIn: 5184000,//60 days
                                 });
-        req.session.token = token;//set-cookie
 
         res.status(200).send({
           id: user._id,
-          role: authorities,
+          token: token
         });
     }).catch(err => errorHandler(err, res));
 };
